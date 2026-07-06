@@ -1,0 +1,19 @@
+{
+  "name": "crosspost",
+  "version": "1.0.0",
+  "description": "Crosspost — отдельное приложение для постинга в Telegram/VK/OK/Дзен/Макс",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "form-data": "^4.0.6",
+    "node-cron": "^4.5.0",
+    "puppeteer": "^24.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
