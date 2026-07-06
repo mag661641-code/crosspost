@@ -270,8 +270,8 @@ _PLAYWRIGHT_LOGIN_TABS = {
 def tab_social(project_id: str):
     try:
         config = api_get("/api/social/config")["config"]
-    except RuntimeError as e:
-        st.error(str(e))
+    except (RuntimeError, requests.exceptions.ConnectionError) as e:
+        st.info("Настройки платформ недоступны без Node-сервера — но вход через Playwright ниже работает без него.")
         config = {}
 
     updated_config = {}
@@ -286,7 +286,7 @@ def tab_social(project_id: str):
                     st.session_state[f"test-result-{platform}"] = (
                         "✅ " + (res.get("note") or "Подключено") if res.get("ok") else "❌ " + res.get("error", "")
                     )
-                except RuntimeError as e:
+                except (RuntimeError, requests.exceptions.ConnectionError) as e:
                     st.session_state[f"test-result-{platform}"] = "❌ " + str(e)
 
             values = config.get(platform, {})
@@ -313,7 +313,7 @@ def tab_social(project_id: str):
         try:
             api_post("/api/social/config", {"config": updated_config})
             st.success("Сохранено")
-        except RuntimeError as e:
+        except (RuntimeError, requests.exceptions.ConnectionError) as e:
             st.error(str(e))
 
 
