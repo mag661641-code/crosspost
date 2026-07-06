@@ -9,6 +9,7 @@ streamlit_app.py — интерфейс Crosspost на Streamlit.
 Node-сервер (crosspost/app.js) должен быть запущен отдельно (START.bat).
 """
 
+import hashlib
 import time
 from datetime import datetime
 
@@ -20,6 +21,21 @@ import ok_playwright
 import dzen_playwright
 import max_playwright
 from playwright_worker import PlaywrightWorker
+
+# Тот же список/хэши, что в projects.js (Node) — 1:1 перенос, чтобы экран
+# логина не зависел от Node-сервера (на Streamlit Cloud его нет и не будет).
+_SALT = "crosspost-salt-v1-2026"
+
+
+def _hash(password: str) -> str:
+    return hashlib.pbkdf2_hmac("sha512", password.encode(), _SALT.encode(), 100_000, dklen=64).hex()
+
+
+PROJECTS = [
+    {"id": "SMU", "name": "СМУ", "fullName": "Стальметгрупп", "icon": "🏗", "passwordHash": _hash("1501")},
+    {"id": "IMP", "name": "ИМП", "fullName": "Инметпром", "icon": "🔩", "passwordHash": _hash("2205")},
+    {"id": "MPE", "name": "МПЭ", "fullName": "МетПромЭнерго", "icon": "⚡", "passwordHash": _hash("1101")},
+]
 
 
 def get_playwright_worker(key: str) -> PlaywrightWorker:
@@ -37,9 +53,10 @@ def get_playwright_worker(key: str) -> PlaywrightWorker:
 
 st.set_page_config(page_title="Crosspost", page_icon="📤", layout="centered")
 
-# Адрес Node-сервера и пароли проектов — из .streamlit/secrets.toml (см. secrets.toml.example).
+# Адрес Node-сервера — из .streamlit/secrets.toml (см. secrets.toml.example).
+# Нужен только вкладкам "Новый пост"/"Очередь"/"Соцсети"; логин и Playwright-вкладки
+# от него не зависят (см. show_login/get_playwright_worker выше).
 API_BASE = st.secrets.get("API_BASE", "http://localhost:3900")
-PROJECT_PASSWORDS = st.secrets.get("project_passwords", {})
 
 
 # ── HTTP-сессия с сохранением куки между перерисовками страницы ──
@@ -75,43 +92,36 @@ def api_post(path: str, json=None):
 
 
 # ── ЭКРАН ЛОГИНА ──
+# Полностью локальный (без Node) — те же id/пароли, что в projects.js.
+# Это НЕ создаёт сессию на Node-сервере: вкладки "Новый пост"/"Очередь"/"Соцсети"
+# (которые всё ещё ходят на localhost:3900) работают только если Node запущен
+# локально — на Cloud они покажут ошибку подключения (см. show_main), а
+# Playwright-вкладки (ВК/ОК/Дзен/Макс) работают независимо от Node.
 def show_login():
     st.title("📤 Crosspost")
-    try:
-        projects = api_get("/api/projects/list")["projects"]
-    except requests.exceptions.ConnectionError:
-        st.error(
-            "Не удаётся подключиться к серверу Crosspost (localhost:3900). "
-            "Убедитесь, что запущен crosspost/START.bat."
-        )
-        return
 
     project_id = st.session_state.get("selected_project_id")
 
-    cols = st.columns(len(projects))
-    for col, p in zip(cols, projects):
+    cols = st.columns(len(PROJECTS))
+    for col, p in zip(cols, PROJECTS):
         with col:
             if st.button(f"{p['icon']} {p['name']}", key=f"proj-{p['id']}", use_container_width=True):
                 st.session_state.selected_project_id = p["id"]
                 st.rerun()
 
     if project_id:
+        project = next(p for p in PROJECTS if p["id"] == project_id)
         with st.form("login_form"):
             password = st.text_input("Пароль", type="password")
             submitted = st.form_submit_button("Войти")
         if submitted:
-            # Быстрая проверка по секретам Streamlit — без похода на сервер, для мгновенной
-            # обратной связи. Окончательное решение всё равно за Node-сервером ниже: именно
-            # он создаёт сессию (куку), которой пользуются все остальные запросы.
-            if PROJECT_PASSWORDS and password != PROJECT_PASSWORDS.get(project_id):
+            if _hash(password) != project["passwordHash"]:
                 st.error("Неверный пароль")
                 return
-            try:
-                res = api_post("/api/projects/login", {"projectId": project_id, "password": password})
-                st.session_state.current_project = res["project"]
-                st.rerun()
-            except RuntimeError as e:
-                st.error(str(e))
+            st.session_state.current_project = {
+                "id": project["id"], "name": project["name"], "fullName": project["fullName"],
+            }
+            st.rerun()
 
 
 # ── ВКЛАДКА: НОВЫЙ ПОСТ ──
