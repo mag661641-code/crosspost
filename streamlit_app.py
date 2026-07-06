@@ -667,7 +667,10 @@ def show_main(project):
         st.markdown(f"### {project['fullName']} ({project['name']})")
     with col2:
         if st.button("Выйти"):
-            api_post("/api/auth/logout")
+            try:
+                api_post("/api/auth/logout")
+            except requests.exceptions.ConnectionError:
+                pass  # Node недоступен (например, на Cloud) — локальный выход всё равно работает
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -707,19 +710,13 @@ def show_main(project):
 
 
 # ── ТОЧКА ВХОДА ──
+# Раньше здесь был поход на Node (/api/auth/state) ДО show_login() — на
+# Streamlit Cloud (где Node нет и не будет) это блокировало вообще всё,
+# даже показ формы логина. current_project теперь хранится только в
+# st.session_state (см. show_login) — без обращения к Node.
 def main():
-    try:
-        state = api_get("/api/auth/state")
-    except requests.exceptions.ConnectionError:
-        st.title("📤 Crosspost")
-        st.error(
-            "Не удаётся подключиться к серверу Crosspost (localhost:3900). "
-            "Убедитесь, что запущен crosspost/START.bat."
-        )
-        return
-
-    if state.get("currentProjectId"):
-        show_main(state["project"])
+    if st.session_state.get("current_project"):
+        show_main(st.session_state["current_project"])
     else:
         show_login()
 
