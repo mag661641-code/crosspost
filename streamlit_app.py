@@ -259,17 +259,25 @@ PLATFORM_HINTS = {
 }
 
 
-def tab_social():
+_PLAYWRIGHT_LOGIN_TABS = {
+    "vk": ("tab_vk_playwright", "ВК"),
+    "ok": ("tab_ok_playwright", "ОК"),
+    "dzen": ("tab_dzen_playwright", "Дзен"),
+    "max": ("tab_max_playwright", "Макс"),
+}
+
+
+def tab_social(project_id: str):
     try:
         config = api_get("/api/social/config")["config"]
     except RuntimeError as e:
         st.error(str(e))
-        return
+        config = {}
 
     updated_config = {}
     for platform, fields in PLATFORM_FIELDS.items():
         with st.container(border=True):
-            header_cols = st.columns([3, 1, 1] if platform in LOGIN_BUTTON_PLATFORMS else [3, 1])
+            header_cols = st.columns([3, 1])
             header_cols[0].markdown(f"**{PLATFORM_NAMES[platform]}**")
 
             if header_cols[1].button("Проверить поля", key=f"test-{platform}"):
@@ -280,23 +288,6 @@ def tab_social():
                     )
                 except RuntimeError as e:
                     st.session_state[f"test-result-{platform}"] = "❌ " + str(e)
-
-            if platform in LOGIN_BUTTON_PLATFORMS:
-                already_logged_in = False
-                try:
-                    already_logged_in = api_get(f"/api/social/status?platform={platform}").get("loggedIn", False)
-                except RuntimeError:
-                    pass
-                login_label = "✓ Уже вошли" if already_logged_in else "Войти в аккаунт"
-                if header_cols[2].button(login_label, key=f"login-{platform}", disabled=already_logged_in):
-                    try:
-                        res = api_post("/api/social/login", {"platform": platform})
-                        st.session_state[f"test-result-{platform}"] = "🪟 " + res.get("note", "")
-                    except RuntimeError as e:
-                        st.session_state[f"test-result-{platform}"] = "❌ " + str(e)
-
-            if platform in PLATFORM_HINTS:
-                st.caption(PLATFORM_HINTS[platform])
 
             values = config.get(platform, {})
             new_values = {}
@@ -309,6 +300,14 @@ def tab_social():
 
             if f"test-result-{platform}" in st.session_state:
                 st.caption(st.session_state[f"test-result-{platform}"])
+
+            # Вход через браузер (Playwright) — работает и без Node/VPS/VNC,
+            # в т.ч. на Streamlit Cloud. Заменяет старую кнопку "Войти в
+            # аккаунт" (ходившую на Node), которая на Cloud не работает.
+            if platform in _PLAYWRIGHT_LOGIN_TABS:
+                fn_name, label = _PLAYWRIGHT_LOGIN_TABS[platform]
+                with st.expander(f"Вход в {label}"):
+                    globals()[fn_name](project_id)
 
     if st.button("Сохранить", type="primary"):
         try:
@@ -681,32 +680,25 @@ def show_main(project):
     # Радио-кнопки не зависят от этого — рендерится только один раздел.
     section = st.radio(
         "Раздел",
-        ["Новый пост", "Очередь", "Соцсети", "ВК (Playwright)", "ОК (Playwright)",
-         "Дзен (Playwright)", "Макс (Playwright)"],
+        ["Новый пост", "Очередь", "Соцсети"],
         horizontal=True, label_visibility="collapsed", key="main-section",
     )
     st.divider()
-    if section in ("Новый пост", "Очередь", "Соцсети"):
-        # Эти три вкладки ходят на Node-бэкенд (app.js, localhost:3900) — на
+    if section in ("Новый пост", "Очередь"):
+        # Эти вкладки ходят на Node-бэкенд (app.js, localhost:3900) — на
         # Streamlit Cloud его нет и не будет (там нет Node), поэтому ловим
         # ошибку явно вместо падения всего приложения.
         try:
             if section == "Новый пост":
                 tab_compose()
-            elif section == "Очередь":
-                tab_queue()
             else:
-                tab_social()
+                tab_queue()
         except Exception as e:  # noqa: BLE001
             st.error(f"Недоступно без локального Node-сервера (app.js): {type(e).__name__}: {e}")
-    elif section == "ВК (Playwright)":
-        tab_vk_playwright(project["id"])
-    elif section == "ОК (Playwright)":
-        tab_ok_playwright(project["id"])
-    elif section == "Дзен (Playwright)":
-        tab_dzen_playwright(project["id"])
-    elif section == "Макс (Playwright)":
-        tab_max_playwright(project["id"])
+    else:
+        # "Соцсети" не требует Node целиком — вход в ВК/ОК/Дзен/Макс идёт
+        # через Playwright прямо здесь (см. tab_social), без Node-сервера.
+        tab_social(project["id"])
 
 
 # ── ТОЧКА ВХОДА ──
