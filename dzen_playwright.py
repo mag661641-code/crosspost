@@ -200,9 +200,14 @@ def has_saved_session(project_id: str) -> bool:
 
 def publish_post(project_id: str, text: str, image_paths: list[str], pub_type: str = "post") -> dict:
     """
-    Публикует пост/статью в Дзен, используя сохранённую сессию. Полностью headless.
-    TODO selector: селекторы редактора — ЗАГЛУШКА (как и в dzen_automation.js),
-    нужна проверка вживую (кнопка "Опубликовать" пока не подтверждена).
+    Публикует статью в Дзен (Студия), используя сохранённую сессию. Полностью headless.
+
+    Реальный путь записан через playwright codegen (07.07.2026) на канале
+    stalmetural: dzen.ru → значок профиля → «Студия» (открывается в НОВОЙ
+    вкладке dzen.ru/profile/editor/{канал}) → кнопка «Добавить публикацию» →
+    «Написать статью» → редактор на Draft.js: первый .public-DraftStyleDefault-block
+    в блоке .zen-editor-block — заголовок, дальше идёт .public-DraftStyleDefault-block
+    внутри .zen-editor-block — тело текста → кнопка «Опубликовать» (точный текст).
     """
     path = session_path(project_id)
     if not path.exists():
@@ -214,20 +219,41 @@ def publish_post(project_id: str, text: str, image_paths: list[str], pub_type: s
         context = browser.new_context(storage_state=str(path), viewport={"width": 1280, "height": 900})
         page = context.new_page()
         try:
-            page.goto(f"{BASE_URL}/profile/editor", wait_until="domcontentloaded")
             lines = (text or "").split("\n", 1)
             title = lines[0]
             body = lines[1] if len(lines) > 1 else ""
 
-            page.fill('[data-testid="title-input"]', title)
-            page.fill('[data-testid="body-input"]', body)
+            page.goto(f"{BASE_URL}/profile/editor", wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+
+            if not _click_button_with_exact_text(page, "Добавить публикацию"):
+                return {"ok": False, "error": "Кнопка «Добавить публикацию» не найдена — проверьте, что канал открылся"}
+            page.wait_for_timeout(800)
+
+            if not _click_button_with_exact_text(page, "Написать статью"):
+                return {"ok": False, "error": "Кнопка «Написать статью» не найдена"}
+            page.wait_for_timeout(1500)
+
+            # Заголовок — первый блок редактора Draft.js.
+            blocks = page.locator(".zen-editor-block .public-DraftStyleDefault-block")
+            blocks.first.click()
+            page.keyboard.type(title, delay=10)
+
+            # Тело — следующий блок (Enter переходит в него, как обычный человек).
+            if body.strip():
+                page.keyboard.press("Enter")
+                page.keyboard.type(body, delay=0)
 
             for img_path in (image_paths or [])[:1]:
-                page.set_input_files('input[type="file"]', img_path)
-                page.wait_for_timeout(1500)
+                file_input = page.locator('input[type="file"]').first
+                if file_input.count() > 0:
+                    file_input.set_input_files(img_path)
+                    page.wait_for_timeout(2000)
 
-            page.click('button:has-text("Опубликовать")')
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1000)
+            if not _click_button_with_exact_text(page, "Опубликовать"):
+                return {"ok": False, "error": "Кнопка «Опубликовать» не найдена"}
+            page.wait_for_timeout(2500)
 
             context.storage_state(path=str(path))
             return {"ok": True, "status": "Опубликовано"}
