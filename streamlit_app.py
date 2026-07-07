@@ -20,6 +20,7 @@ import vk_playwright
 import ok_playwright
 import dzen_playwright
 import max_playwright
+import telegram_api
 from playwright_worker import PlaywrightWorker
 
 # Тот же список/хэши, что в projects.js (Node) — 1:1 перенос, чтобы экран
@@ -262,7 +263,26 @@ def tab_social(project_id: str):
                 with st.expander(f"Вход в {label}"):
                     globals()[fn_name](project_id)
             else:
-                st.caption("Публикация в Telegram требует локального Node-сервера (app.js).")
+                # Telegram не требует входа через браузер вообще — публикация
+                # идёт напрямую через Bot API (обычный HTTP-запрос с токеном
+                # бота), без Node и без Playwright.
+                tg_config = telegram_api.load_config(project_id)
+                bot_token = st.text_input(
+                    "Bot Token", value=tg_config.get("botToken", ""), type="password", key="tg-bot-token",
+                )
+                chat_id = st.text_input("Chat ID", value=tg_config.get("chatId", ""), key="tg-chat-id")
+                if bot_token != tg_config.get("botToken", "") or chat_id != tg_config.get("chatId", ""):
+                    telegram_api.save_config(project_id, bot_token, chat_id)
+
+                if st.button("Отправить тестовое сообщение", key="tg-test"):
+                    if not bot_token or not chat_id:
+                        st.error("Заполните Bot Token и Chat ID")
+                    else:
+                        result = telegram_api.send_text(bot_token, chat_id, "Тест интеграции Crosspost ✅")
+                        if result.get("ok"):
+                            st.success("Отправлено!")
+                        else:
+                            st.error(result.get("error"))
 
 
 # ── ГЛАВНЫЙ ЭКРАН ──
