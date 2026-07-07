@@ -236,27 +236,7 @@ def tab_queue():
 
 
 # ── ВКЛАДКА: СОЦСЕТИ ──
-PLATFORM_FIELDS = {
-    "telegram": [("botToken", "Bot Token"), ("chatId", "Chat ID")],
-    "vk": [("groupUrl", "Ссылка на группу/страницу")],
-    "ok": [("groupUrl", "Ссылка на группу")],
-    "dzen": [("login", "Логин"), ("password", "Пароль"), ("groupUrl", "Ссылка на редактор канала")],
-    "max": [],
-}
 PLATFORM_NAMES = {"telegram": "Telegram", "vk": "VK", "ok": "Одноклассники", "dzen": "Дзен", "max": "Макс"}
-LOGIN_BUTTON_PLATFORMS = {"vk", "ok", "dzen", "max"}
-PLATFORM_HINTS = {
-    "ok": "Одноклассники входят так же, как ВК — по номеру телефона и коду из SMS, без отдельного пароля. "
-          "Нажмите «Войти в аккаунт», введите номер телефона и код из SMS в открывшемся окне на сервере. "
-          "После этого вход запомнится.",
-    "vk": "Нажмите «Войти в аккаунт», введите номер телефона и код из SMS в открывшемся окне на сервере. "
-          "Вход нужен только один раз — дальше запомнится.",
-    "dzen": "Нажмите «Войти в аккаунт» и войдите логином и паролем от Дзена в открывшемся окне на сервере — "
-            "вход запомнится, поля ниже можно не заполнять. Логин/Пароль в форме — запасной вариант: "
-            "если сессия слетит, приложение само перезайдёт этими данными без открытия окна.",
-    "max": "Нажмите «Войти в аккаунт», введите номер телефона и код из SMS в открывшемся окне на сервере. "
-           "Вход нужен только один раз — дальше запомнится.",
-}
 
 
 _PLAYWRIGHT_LOGIN_TABS = {
@@ -268,53 +248,21 @@ _PLAYWRIGHT_LOGIN_TABS = {
 
 
 def tab_social(project_id: str):
-    try:
-        config = api_get("/api/social/config")["config"]
-    except (RuntimeError, requests.exceptions.ConnectionError) as e:
-        st.info("Настройки платформ недоступны без Node-сервера — но вход через Playwright ниже работает без него.")
-        config = {}
-
-    updated_config = {}
-    for platform, fields in PLATFORM_FIELDS.items():
+    for platform in PLATFORM_NAMES:
         with st.container(border=True):
-            header_cols = st.columns([3, 1])
-            header_cols[0].markdown(f"**{PLATFORM_NAMES[platform]}**")
-
-            if header_cols[1].button("Проверить поля", key=f"test-{platform}"):
-                try:
-                    res = api_post("/api/social/test", {"platform": platform})
-                    st.session_state[f"test-result-{platform}"] = (
-                        "✅ " + (res.get("note") or "Подключено") if res.get("ok") else "❌ " + res.get("error", "")
-                    )
-                except (RuntimeError, requests.exceptions.ConnectionError) as e:
-                    st.session_state[f"test-result-{platform}"] = "❌ " + str(e)
-
-            values = config.get(platform, {})
-            new_values = {}
-            for key, label in fields:
-                new_values[key] = st.text_input(
-                    label, value=values.get(key, ""), key=f"{platform}-{key}",
-                    type="password" if key == "password" else "default",
-                )
-            updated_config[platform] = new_values
-
-            if f"test-result-{platform}" in st.session_state:
-                st.caption(st.session_state[f"test-result-{platform}"])
+            st.markdown(f"**{PLATFORM_NAMES[platform]}**")
 
             # Вход через браузер (Playwright) — работает и без Node/VPS/VNC,
-            # в т.ч. на Streamlit Cloud. Заменяет старую кнопку "Войти в
-            # аккаунт" (ходившую на Node), которая на Cloud не работает.
+            # в т.ч. на Streamlit Cloud. Старые поля логина/пароля/токена и
+            # кнопки "Проверить поля"/"Сохранить" убрали — они писали в
+            # конфиг Node-сервера, которого на Cloud нет и не будет, так
+            # что толку от них не было.
             if platform in _PLAYWRIGHT_LOGIN_TABS:
                 fn_name, label = _PLAYWRIGHT_LOGIN_TABS[platform]
                 with st.expander(f"Вход в {label}"):
                     globals()[fn_name](project_id)
-
-    if st.button("Сохранить", type="primary"):
-        try:
-            api_post("/api/social/config", {"config": updated_config})
-            st.success("Сохранено")
-        except (RuntimeError, requests.exceptions.ConnectionError) as e:
-            st.error(str(e))
+            else:
+                st.caption("Публикация в Telegram требует локального Node-сервера (app.js).")
 
 
 # ── ГЛАВНЫЙ ЭКРАН ──
@@ -332,7 +280,7 @@ def tab_vk_playwright(project_id: str):
         st.divider()
 
     st.caption(
-        "Демо: вход в ВК через Playwright прямо здесь, без отдельного Node-сервера. "
+        "Вход в ВК через Playwright прямо здесь, без отдельного Node-сервера. "
         "Браузер работает в фоне (headless) — вместо окна показываем скриншот, ввод телефона/кода — обычными полями ниже."
     )
 
@@ -419,7 +367,7 @@ def tab_ok_playwright(project_id: str):
         st.divider()
 
     st.caption(
-        "Демо: вход в ОК через кнопку «Войти через VK ID» — открывается окно VK ID, "
+        "Вход в ОК через кнопку «Войти через VK ID» — открывается окно VK ID, "
         "телефон + пароль/код от аккаунта ВК. Браузер работает в фоне (headless), вместо "
         "окна показываем скриншот, ввод — обычными полями ниже."
     )
@@ -503,7 +451,7 @@ def tab_dzen_playwright(project_id: str):
         st.divider()
 
     st.caption(
-        "Демо: вход в Дзен через «Войти через Яндекс ID». Браузер работает в фоне (headless) — "
+        "Вход в Дзен через «Войти через Яндекс ID». Браузер работает в фоне (headless) — "
         "вместо окна показываем скриншот, ввод — обычными полями ниже."
     )
 
@@ -599,7 +547,7 @@ def tab_max_playwright(project_id: str):
         st.divider()
 
     st.caption(
-        "Демо: вход в Макс через Playwright прямо здесь. Браузер работает в фоне (headless) — "
+        "Вход в Макс через Playwright прямо здесь. Браузер работает в фоне (headless) — "
         "вместо окна показываем скриншот, ввод телефона/кода — обычными полями ниже."
     )
 
